@@ -7,6 +7,7 @@ import json
 import jwt, hashlib
 import time
 from enum import Enum
+import modbus_tk.defines as cst
 
 # JWT from TBAS
 jwtFromTBAS = b''
@@ -21,6 +22,8 @@ class AddrType(Enum):
     TBASPORT = 8001
     PI1IP = "192.168.87.134"
     PI1PORT = 8001
+    CONVERTER_IP = "192.168.163.150"
+    CONVERTER_PORT = "502"
 
 # thread class
 class ServerThread(Thread):
@@ -38,7 +41,6 @@ class ServerThread(Thread):
             print ("From", self.addr, ": " + dataFromTBAS.decode("utf-8"))
             self.conn.sendall("Control program got TBAS's Token.".encode("utf-8"))
             self.pipe1.send(dataFromTBAS)
-            # self.pipe1.close()
             print(self.addr, "disconnect!")
             self.conn.close()
             break
@@ -49,7 +51,6 @@ def serverMain(pipe1):
     context.load_cert_chain("./certificate.pem", "./privkey.pem")
     # prohibit the use of TLSv1.0, TLgSv1.1, TLSv1.2 -> use TLSv1.3
     context.options |= (ssl.OP_NO_TLSv1 | ssl.OP_NO_TLSv1_1 | ssl.OP_NO_TLSv1_2)
-
     # open, bind, listen socket
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0) as sock:
         sock.bind((AddrType.IP.value, AddrType.PORT.value))
@@ -93,6 +94,12 @@ def connectTBAS():
             dic["passwd"] = "123"
             dic["ip"] = AddrType.PI1IP.value
             dic["port"] = AddrType.PI1PORT.value
+            dic["converter_ip"] = AddrType.CONVERTER_IP.value
+            dic["converter_port"] = AddrType.CONVERTER_PORT.value
+            dic["slave_id"] = 1
+            dic["function_code"] = cst.READ_INPUT_REGISTERS
+            dic["starting_address"] = 0
+            dic["quantity_of_x "] = 3
 
             ssock.sendall(bytes(json.dumps(dic), encoding="utf-8"))
             dataFromTBAS = ssock.recv(2048)
