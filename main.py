@@ -6,6 +6,7 @@ from threading import Thread
 import json
 import jwt, hashlib
 import time
+import uuid
 from enum import Enum
 import modbus_tk.defines as cst
 
@@ -30,19 +31,19 @@ class ServerThread(Thread):
 
     def __init__(self, conn, addr, pipe1):
         Thread.__init__(self)
-        self.conn = conn
-        self.addr = addr
-        self.pipe1 = pipe1
+        self._conn = conn
+        self._addr = addr
+        self._pipe1 = pipe1
         
     def run(self):
         while True:
             # global jwtFromTBASbyPi
-            dataFromTBAS = self.conn.recv(2048)
-            print ("From", self.addr, ": " + dataFromTBAS.decode("utf-8"))
-            self.conn.sendall("Control program got TBAS's Token.".encode("utf-8"))
-            self.pipe1.send(dataFromTBAS)
-            print(self.addr, "disconnect!")
-            self.conn.close()
+            dataFromTBAS = self._conn.recv(2048)
+            print ("From", self._addr, ": " + dataFromTBAS.decode("utf-8"))
+            self._conn.sendall("Control program got TBAS's Token.".encode("utf-8"))
+            self._pipe1.send(dataFromTBAS)
+            print(self._addr, "disconnect!")
+            self._conn.close()
             break
 
 def serverMain(pipe1):
@@ -84,25 +85,28 @@ def connectTBAS():
     # prohibit the use of TLSv1.0, TLSv1.1, TLSv1.2 -> use TLSv1.3
     context.options |= (ssl.OP_NO_TLSv1 | ssl.OP_NO_TLSv1_1 | ssl.OP_NO_TLSv1_2)
     # open socket and connect TBAS
-    with context.wrap_socket(socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0)) as ssock:
+    with context.wrap_socket(socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0)) as sock:
         try:
-            ssock.connect((AddrType.TBASIP.value, AddrType.TBASPORT.value))
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            sock.connect((AddrType.TBASIP.value, AddrType.TBASPORT.value))
             dic = {}
             # dic["account"] = input("Please enter your account : ")
             # dic["passwd"] = input("Please enter your password : ")
             dic["account"] = "a"
             dic["passwd"] = "123"
-            dic["ip"] = AddrType.PI1IP.value
-            dic["port"] = AddrType.PI1PORT.value
+            dic["hostname"] = socket.gethostname()
+            dic["mac_addr"] = uuid.UUID(int = uuid.getnode()).hex[-12:]
+            dic["Pi_ip"] = AddrType.PI1IP.value
+            dic["Pi_port"] = AddrType.PI1PORT.value
             dic["converter_ip"] = AddrType.CONVERTER_IP.value
             dic["converter_port"] = AddrType.CONVERTER_PORT.value
             dic["slave_id"] = 1
             dic["function_code"] = cst.READ_INPUT_REGISTERS
             dic["starting_address"] = 0
-            dic["quantity_of_x "] = 3
+            dic["quantity_of_x"] = 3
 
-            ssock.sendall(bytes(json.dumps(dic), encoding="utf-8"))
-            dataFromTBAS = ssock.recv(2048)
+            sock.sendall(bytes(json.dumps(dic), encoding="utf-8"))
+            dataFromTBAS = sock.recv(2048)
             global jwtFromTBAS
             jwtFromTBAS = dataFromTBAS
             # try:
@@ -121,7 +125,7 @@ def connectTBAS():
             # except jwt.InvalidAudienceError:
             #     print("Audience is error.")
 
-            ssock.sendall("close".encode("utf-8"))
+            sock.sendall("close".encode("utf-8"))
 
         except socket.error:
             print ("Connect error")
@@ -131,12 +135,13 @@ def connectRaspberryPi(pipe2):
     context = ssl.SSLContext(ssl.PROTOCOL_TLS)
     context.load_verify_locations("./key/certificate.pem")
     context.options |= (ssl.OP_NO_TLSv1 | ssl.OP_NO_TLSv1_1 | ssl.OP_NO_TLSv1_2)
-    with context.wrap_socket(socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0)) as ssock:
+    with context.wrap_socket(socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0)) as sock:
         try:
-            ssock.connect((AddrType.PI1IP.value, AddrType.PI1PORT.value))
-            ssock.sendall(jwtFromTBAS)
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            sock.connect((AddrType.PI1IP.value, AddrType.PI1PORT.value))
+            sock.sendall(jwtFromTBAS)
             # wait for feadback of Pi
-            dataFromPi = ssock.recv(1024).decode("utf-8")
+            dataFromPi = sock.recv(1024).decode("utf-8")
             
             while True:
                 # Token from control program is legal
@@ -144,7 +149,7 @@ def connectRaspberryPi(pipe2):
                     print("Token from control program is legal.")
                     
                     # wait for Pi send Device's data with Token
-                    jwtFromPi = ssock.recv(2048)
+                    jwtFromPi = sock.recv(2048)
 
                     # print(jwtFromPi)
                     try:
@@ -160,33 +165,33 @@ def connectRaspberryPi(pipe2):
                                 print(decodedData)
                                 break
                             else:
-                                ssock.sendall("Your Token is illegal.".encode("utf-8"))
+                                sock.sendall("Your Token is illegal.".encode("utf-8"))
                     except jwt.InvalidSignatureError:
                         print("Signature verification failed.")
-                        ssock.sendall("Signature verification failed.".encode("utf-8"))
+                        sock.sendall("Signature verification failed.".encode("utf-8"))
                     except jwt.DecodeError:
                         print("Decode Error.")
-                        ssock.sendall("Decode Error.".encode("utf-8"))
+                        sock.sendall("Decode Error.".encode("utf-8"))
                     except jwt.ExpiredSignatureError:
                         print("Signature has expired.")
-                        ssock.sendall("Signature has expired.".encode("utf-8"))
+                        sock.sendall("Signature has expired.".encode("utf-8"))
                     except jwt.InvalidAudienceError:
                         print("Audience is error.")
-                        ssock.sendall("Audience is error.".encode("utf-8"))
+                        sock.sendall("Audience is error.".encode("utf-8"))
                     except jwt.InvalidIssuerError:
                         print("Issue is error.")
-                        ssock.sendall("Issue is error.".encode("utf-8"))
+                        sock.sendall("Issue is error.".encode("utf-8"))
                     except jwt.InvalidIssuedAtError:
                         print("The time of the Token was issued which is error.")
-                        ssock.sendall("The time of the Token was issued which is error.".encode("utf-8"))
+                        sock.sendall("The time of the Token was issued which is error.".encode("utf-8"))
                 # Token from control program is illegal, resend verification information to TBAS
                 else:
                     print("Token from control program is illegal.")
                     connectTBAS()
-                    ssock.sendall(jwtFromTBAS)
-                    dataFromPi = ssock.recv(1024).decode("utf-8")
+                    sock.sendall(jwtFromTBAS)
+                    dataFromPi = sock.recv(1024).decode("utf-8")
 
-            ssock.sendall("close".encode("utf-8"))
+            sock.sendall("close".encode("utf-8"))
             pipe2.close()
 
         except socket.error:
