@@ -20,13 +20,11 @@ class AddrType(Enum):
     CP_IP_eth0 = "140.116.164.141"
     CP_IP_eth1 = "192.168.1.101"
     CP_PORT = 8001
-    TBAS_IP_eth0 = "192.168.1.100"
-    TBAS_IP_eth1 = "192.168.2.100"
+    TBAS_IP = "192.168.1.100"
     TBAS_PORT = 8001
-    PI_IP_eth0 = "192.168.3.102"
-    PI_IP_eth1 = "192.168.4.102"
+    PI_IP = "192.168.1.102"
     PI_PORT = 8001
-    CONVERTER_IP = "192.168.4.105"
+    CONVERTER_IP = "192.168.2.105"
     CONVERTER_PORT = "502"
 
 # thread class
@@ -91,7 +89,7 @@ def connectTBAS():
     with context.wrap_socket(socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0)) as sock:
         try:
             sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-            sock.connect((AddrType.TBAS_IP_eth0.value, AddrType.TBAS_PORT.value))
+            sock.connect((AddrType.TBAS_IP.value, AddrType.TBAS_PORT.value))
             dic = {}
             # dic["account"] = input("Please enter your account : ")
             # dic["passwd"] = input("Please enter your password : ")
@@ -99,7 +97,7 @@ def connectTBAS():
             # dic["passwd"] = "123"
             dic["hostname"] = socket.gethostname()
             dic["mac_addr"] = uuid.UUID(int = uuid.getnode()).hex[-12:]
-            dic["Pi_ip"] = AddrType.PI_IP_eth0.value
+            dic["Pi_ip"] = AddrType.PI_IP.value
             dic["Pi_port"] = AddrType.PI_PORT.value
             dic["converter_ip"] = AddrType.CONVERTER_IP.value
             dic["converter_port"] = AddrType.CONVERTER_PORT.value
@@ -141,7 +139,7 @@ def connectRaspberryPi(pipe2):
     with context.wrap_socket(socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0)) as sock:
         try:
             sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-            sock.connect((AddrType.PI_IP_eth0.value, AddrType.PI_PORT.value))
+            sock.connect((AddrType.PI_IP.value, AddrType.PI_PORT.value))
             sock.sendall(jwtFromTBAS)
             # wait for feadback of Pi
             dataFromPi = sock.recv(1024).decode("utf-8")
@@ -158,14 +156,14 @@ def connectRaspberryPi(pipe2):
                     if jwtFromTBAS == jwtFromPi:
                         audienceIP = AddrType.CP_IP_eth0.value
                     elif pipe2.recv() == jwtFromPi:
-                        audienceIP = AddrType.PI_IP_eth0.value
+                        audienceIP = AddrType.PI_IP.value
                     else:
                         sock.sendall("Your Token is illegal.".encode("utf-8"))
                         break
 
                     try:
                         decodedData = jwt.decode(jwtFromPi, jwt.decode(jwtFromPi, verify=False)["public_key"].encode("utf-8")
-                            , issuer=AddrType.TBAS_IP_eth0.value, audience=audienceIP, algorithm='RS256')
+                            , issuer=AddrType.TBAS_IP.value, audience=audienceIP, algorithm='RS256')
                         print(decodedData)
                     except jwt.InvalidSignatureError:
                         print("Signature verification failed.")
