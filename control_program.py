@@ -1,31 +1,19 @@
 from multiprocessing import Process, Pipe
 import ctypes
-# import socketClient, socketServer
 import socket, ssl
 from threading import Thread 
 import json
 import jwt, hashlib
 import time
 import uuid
-from enum import Enum
+# from enum import Enum
 import modbus_tk.defines as cst
+import addr_defines
 
 # JWT from TBAS
 jwtFromTBAS = b''
 # JWT from TBAS by Pi
 jwtFromTBASbyPi = b''
-
-# address enumerate
-class AddrType(Enum):
-    CP_IP_eth0 = "140.116.164.141"
-    CP_IP_eth1 = "192.168.1.101"
-    CP_PORT = 8001
-    TBAS_IP = "192.168.1.100"
-    TBAS_PORT = 8001
-    PI_IP = "192.168.1.102"
-    PI_PORT = 8001
-    CONVERTER_IP = "192.168.2.105"
-    CONVERTER_PORT = "502"
 
 # thread class
 class ServerThread(Thread):
@@ -55,9 +43,10 @@ def serverMain(pipe1):
     context.options |= (ssl.OP_NO_TLSv1 | ssl.OP_NO_TLSv1_1 | ssl.OP_NO_TLSv1_2)
     # open, bind, listen socket
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0) as sock:
-        sock.bind((AddrType.CP_IP_eth1.value, AddrType.CP_PORT.value))
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        sock.bind((addr_defines.CP_IP, addr_defines.CP_PORT))
         sock.listen(5)
-        print ("Server start at: %s:%s" %(AddrType.CP_IP_eth1.value, AddrType.CP_PORT.value))
+        print ("Server start at: %s:%s" %(addr_defines.CP_IP, addr_defines.CP_PORT))
         print ("Wait for connection...")
 
         with context.wrap_socket(sock, server_side=True) as ssock:
@@ -71,12 +60,6 @@ def serverMain(pipe1):
                     
                 except KeyboardInterrupt:
                     break
-
-# choice enumerate
-class Choice(Enum):
-    ONE = "1"
-    TWO = "2"
-    THREE = "3"
     
 # connect TBAS and send data to TBAS
 def connectTBAS():
@@ -89,18 +72,14 @@ def connectTBAS():
     with context.wrap_socket(socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0)) as sock:
         try:
             sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-            sock.connect((AddrType.TBAS_IP.value, AddrType.TBAS_PORT.value))
+            sock.connect((addr_defines.TBAS_IP, addr_defines.TBAS_PORT))
             dic = {}
-            # dic["account"] = input("Please enter your account : ")
-            # dic["passwd"] = input("Please enter your password : ")
-            # dic["account"] = "a"
-            # dic["passwd"] = "123"
             dic["hostname"] = socket.gethostname()
             dic["mac_addr"] = uuid.UUID(int = uuid.getnode()).hex[-12:]
-            dic["Pi_ip"] = AddrType.PI_IP.value
-            dic["Pi_port"] = AddrType.PI_PORT.value
-            dic["converter_ip"] = AddrType.CONVERTER_IP.value
-            dic["converter_port"] = AddrType.CONVERTER_PORT.value
+            dic["Pi_ip"] = addr_defines.PI_IP
+            dic["Pi_port"] = addr_defines.PI_PORT
+            dic["converter_ip"] = addr_defines.CONVERTER_IP
+            dic["converter_port"] = addr_defines.CONVERTER_PORT
             dic["slave_id"] = 1
             dic["function_code"] = cst.READ_INPUT_REGISTERS
             dic["starting_address"] = 0
@@ -139,7 +118,7 @@ def connectRaspberryPi(pipe2):
     with context.wrap_socket(socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0)) as sock:
         try:
             sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-            sock.connect((AddrType.PI_IP.value, AddrType.PI_PORT.value))
+            sock.connect((addr_defines.PI_IP, addr_defines.PI_PORT))
             sock.sendall(jwtFromTBAS)
             # wait for feadback of Pi
             dataFromPi = sock.recv(1024).decode("utf-8")
@@ -150,39 +129,44 @@ def connectRaspberryPi(pipe2):
                     print("Token from control program is legal.")
                     
                     # wait for Pi send Device's data with Token
-                    jwtFromPi = sock.recv(2048)
-
+                    jwtFromPi = sock.recv(2048).decode("utf-8")
+                    s = jwtFromPi.split("+++++")
+                    jsonFromDevice = json.loads(s[1])
+                    print(s[0])
+                    print(jsonFromDevice)
+                    
+                    break
                     # print(jwtFromPi)
-                    if jwtFromTBAS == jwtFromPi:
-                        audienceIP = AddrType.CP_IP_eth0.value
-                    elif pipe2.recv() == jwtFromPi:
-                        audienceIP = AddrType.PI_IP.value
-                    else:
-                        sock.sendall("Your Token is illegal.".encode("utf-8"))
-                        break
+                    # if jwtFromTBAS == jwtFromPi:
+                    #     audienceIP = addr_defines.CP_IP
+                    # elif pipe2.recv() == jwtFromPi:
+                    #     audienceIP = addr_defines.PI_IP
+                    # else:
+                    #     sock.sendall("Your Token is illegal.".encode("utf-8"))
+                    #     break
 
-                    try:
-                        decodedData = jwt.decode(jwtFromPi, jwt.decode(jwtFromPi, verify=False)["public_key"].encode("utf-8")
-                            , issuer=AddrType.TBAS_IP.value, audience=audienceIP, algorithm='RS256')
-                        print(decodedData)
-                    except jwt.InvalidSignatureError:
-                        print("Signature verification failed.")
-                        sock.sendall("Signature verification failed.".encode("utf-8"))
-                    except jwt.DecodeError:
-                        print("Decode Error.")
-                        sock.sendall("Decode Error.".encode("utf-8"))
-                    except jwt.ExpiredSignatureError:
-                        print("Signature has expired.")
-                        sock.sendall("Signature has expired.".encode("utf-8"))
-                    except jwt.InvalidAudienceError:
-                        print("Audience is error.")
-                        sock.sendall("Audience is error.".encode("utf-8"))
-                    except jwt.InvalidIssuerError:
-                        print("Issue is error.")
-                        sock.sendall("Issue is error.".encode("utf-8"))
-                    except jwt.InvalidIssuedAtError:
-                        print("The time of the Token was issued which is error.")
-                        sock.sendall("The time of the Token was issued which is error.".encode("utf-8"))
+                    # try:
+                    #     decodedData = jwt.decode(jwtFromPi, jwt.decode(jwtFromPi, verify=False)["public_key"].encode("utf-8")
+                    #         , issuer=addr_defines.TBAS_IP, audience=audienceIP, algorithm='RS256')
+                    #     print(decodedData)
+                    # except jwt.InvalidSignatureError:
+                    #     print("Signature verification failed.")
+                    #     sock.sendall("Signature verification failed.".encode("utf-8"))
+                    # except jwt.DecodeError:
+                    #     print("Decode Error.")
+                    #     sock.sendall("Decode Error.".encode("utf-8"))
+                    # except jwt.ExpiredSignatureError:
+                    #     print("Signature has expired.")
+                    #     sock.sendall("Signature has expired.".encode("utf-8"))
+                    # except jwt.InvalidAudienceError:
+                    #     print("Audience is error.")
+                    #     sock.sendall("Audience is error.".encode("utf-8"))
+                    # except jwt.InvalidIssuerError:
+                    #     print("Issue is error.")
+                    #     sock.sendall("Issue is error.".encode("utf-8"))
+                    # except jwt.InvalidIssuedAtError:
+                    #     print("The time of the Token was issued which is error.")
+                    #     sock.sendall("The time of the Token was issued which is error.".encode("utf-8"))
                 # Token from control program is illegal, resend verification information to TBAS
                 else:
                     print("Token from control program is illegal.")
@@ -198,14 +182,8 @@ def connectRaspberryPi(pipe2):
 
 def clientMain(pipe2):
     while True:
-        # print("Please choice what do you want.")
-        # choice = input("(1)Send data to TBAS. (2)Send data to Raspberry Pi. (3)Close. : ")
-        # if choice == Choice.ONE.value:
-        #     # startTime = time.time()
         connectTBAS()
-        # elif choice == Choice.TWO.value and jwtFromTBAS:
         connectRaspberryPi(pipe2)
-        # elif choice == Choice.THREE.value:
         break
 
 def main():

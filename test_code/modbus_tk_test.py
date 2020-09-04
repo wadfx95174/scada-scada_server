@@ -1,7 +1,6 @@
 from modbus_tk import modbus_tcp
 import modbus_tk.defines as cst
 import modbus_tk
-import modbus_tk_override
 
 master = modbus_tcp.TcpMaster("192.168.163.150", 502)
 try:
