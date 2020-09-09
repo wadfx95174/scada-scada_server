@@ -12,8 +12,6 @@ import addr_defines
 
 # JWT from TBAS
 jwtFromTBAS = b''
-# JWT from TBAS by Pi
-jwtFromTBASbyPi = b''
 
 # thread class
 class ServerThread(Thread):
@@ -26,7 +24,6 @@ class ServerThread(Thread):
         
     def run(self):
         while True:
-            # global jwtFromTBASbyPi
             dataFromTBAS = self._conn.recv(2048)
             print ("From", self._addr, ": " + dataFromTBAS.decode("utf-8"))
             self._conn.sendall("Control program got TBAS's Token.".encode("utf-8"))
@@ -130,11 +127,14 @@ def connectRaspberryPi(pipe2):
                     
                     # wait for Pi send Device's data with Token
                     jwtFromPi = sock.recv(2048).decode("utf-8")
-                    s = jwtFromPi.split("+++++")
-                    jsonFromDevice = json.loads(s[1])
-                    print(s[0])
-                    print(jsonFromDevice)
-                    
+                    # s = jwtFromPi.split("+++++")
+                    jsonFromDevice = json.loads(jwtFromPi)
+                    # print(s[0])
+                    # print(jsonFromDevice)
+                    print("Humidity :", format(float(jsonFromDevice[0])/float(100),'.2f'))
+                    print("Temperature (Celsius) :", format(float(jsonFromDevice[1])/float(100),'.2f'))
+                    print("Temperature (Fahrenheit) :", format(float(jsonFromDevice[2])/float(100),'.2f'))
+
                     break
                     # print(jwtFromPi)
                     # if jwtFromTBAS == jwtFromPi:
@@ -182,9 +182,27 @@ def connectRaspberryPi(pipe2):
 
 def clientMain(pipe2):
     while True:
-        connectTBAS()
-        connectRaspberryPi(pipe2)
-        break
+        # connectTBAS()
+        try:
+            try:
+                # global jwtFromTBAS
+                # verify jwt via signature and decode it via rsa's public key
+                decodedData = jwt.decode(jwtFromTBAS, jwt.decode(jwtFromTBAS, verify=False)["public_key"].encode("utf-8")
+                    , issuer=addr_defines.TBAS_IP, audience=addr_defines.CP_IP, algorithm='RS256')
+            except jwt.InvalidSignatureError:
+                connectTBAS()
+            except jwt.DecodeError:
+                connectTBAS()
+            except jwt.ExpiredSignatureError:
+                connectTBAS()
+            except jwt.InvalidIssuerError:
+                connectTBAS()
+            except jwt.InvalidAudienceError:
+                connectTBAS()
+            connectRaspberryPi(pipe2)
+            time.sleep(6)
+        except KeyboardInterrupt:
+            break
 
 def main():
     (pipe1, pipe2) = Pipe()
