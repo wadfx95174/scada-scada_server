@@ -10,8 +10,10 @@ import uuid
 import modbus_tk.defines as cst
 import addr_defines
 
-# JWT from TBAS
-jwtFromTBAS = b''
+# JWT from TTAS(CP)
+jwtFromTTAS = b''
+# JWT from TTAS(TVM)
+jwtFromTTAS_TVM = b''
 
 # thread class
 class ServerThread(Thread):
@@ -24,10 +26,12 @@ class ServerThread(Thread):
         
     def run(self):
         while True:
-            dataFromTBAS = self._conn.recv(2048)
-            print ("From", self._addr, ": " + dataFromTBAS.decode("utf-8"))
-            self._conn.sendall("Control program got TBAS's Token.".encode("utf-8"))
-            self._pipe1.send(dataFromTBAS)
+            global jwtFromTTAS_TVM
+            dataFromTTAS = self._conn.recv(2048)
+            print ("From", self._addr, ": " + dataFromTTAS.decode("utf-8"))
+            self._conn.sendall("Control program got TTAS's Token.".encode("utf-8"))
+            jwtFromTTAS_TVM = dataFromTTAS
+            # self._pipe1.send(dataFromTTAS)
             print(self._addr, "disconnect!")
             self._conn.close()
             break
@@ -58,23 +62,23 @@ def serverMain(pipe1):
                 except KeyboardInterrupt:
                     break
     
-# connect TBAS and send data to TBAS
-def connectTBAS():
+# connect TTAS and send data to TTAS
+def connectTTAS():
     context = ssl.SSLContext(ssl.PROTOCOL_TLS)
     # load certificate file
     context.load_verify_locations("./key/certificate.pem")
     # prohibit the use of TLSv1.0, TLSv1.1, TLSv1.2 -> use TLSv1.3
     context.options |= (ssl.OP_NO_TLSv1 | ssl.OP_NO_TLSv1_1 | ssl.OP_NO_TLSv1_2)
-    # open socket and connect TBAS
+    # open socket and connect TTAS
     with context.wrap_socket(socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0)) as sock:
         try:
             sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-            sock.connect((addr_defines.TBAS_IP, addr_defines.TBAS_PORT))
+            sock.connect((addr_defines.TTAS_IP, addr_defines.TTAS_PORT))
             dic = {}
             dic["hostname"] = socket.gethostname()
             dic["mac_addr"] = uuid.UUID(int = uuid.getnode()).hex[-12:]
-            dic["Pi_ip"] = addr_defines.PI_IP
-            dic["Pi_port"] = addr_defines.PI_PORT
+            dic["TVM_ip"] = addr_defines.TVM_IP
+            dic["TVM_port"] = addr_defines.TVM_PORT
             dic["converter_ip"] = addr_defines.CONVERTER_IP
             dic["converter_port"] = addr_defines.CONVERTER_PORT
             dic["slave_id"] = 1
@@ -83,13 +87,13 @@ def connectTBAS():
             dic["quantity_of_x"] = 3
 
             sock.sendall(bytes(json.dumps(dic), encoding="utf-8"))
-            dataFromTBAS = sock.recv(2048)
-            global jwtFromTBAS
-            jwtFromTBAS = dataFromTBAS
+            dataFromTTAS = sock.recv(2048)
+            global jwtFromTTAS
+            jwtFromTTAS = dataFromTTAS
             # try:
             #     # verify jwt via signature and decode it via rsa's public key
-            #     decodedData = jwt.decode(dataFromTBAS, jwt.decode(dataFromTBAS, verify=False)["public_key"].encode("utf-8")
-            #         , issuer=AddrType.TBASIP.value, audience=AddrType.IP.value, algorithm='RS256')
+            #     decodedData = jwt.decode(dataFromTTAS, jwt.decode(dataFromTTAS, verify=False)["public_key"].encode("utf-8")
+            #         , issuer=AddrType.TTASIP.value, audience=AddrType.IP.value, algorithm='RS256')
             #     print(decodedData)
             # except jwt.InvalidSignatureError:
             #     print("Signature verification failed.")
@@ -107,72 +111,73 @@ def connectTBAS():
         except socket.error:
             print ("Connect error")
 
-# connect Raspberry Pi and send data to Raspberry 
-def connectRaspberryPi(pipe2):
+# connect TVM and send data to Raspberry 
+def connectTVM(pipe2):
     context = ssl.SSLContext(ssl.PROTOCOL_TLS)
     context.load_verify_locations("./key/certificate.pem")
     context.options |= (ssl.OP_NO_TLSv1 | ssl.OP_NO_TLSv1_1 | ssl.OP_NO_TLSv1_2)
     with context.wrap_socket(socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0)) as sock:
         try:
             sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-            sock.connect((addr_defines.PI_IP, addr_defines.PI_PORT))
-            sock.sendall(jwtFromTBAS)
-            # wait for feadback of Pi
-            dataFromPi = sock.recv(1024).decode("utf-8")
+            sock.connect((addr_defines.TVM_IP, addr_defines.TVM_PORT))
+            sock.sendall(jwtFromTTAS)
+            # wait for feadback of TVM
+            dataFromTVM = sock.recv(1024).decode("utf-8")
             
             while True:
                 # Token from control program is legal
-                if dataFromPi == "Legal":
+                if dataFromTVM == "Legal":
                     print("Token from control program is legal.")
                     
-                    # wait for Pi send Device's data with Token
-                    jwtFromPi = sock.recv(2048).decode("utf-8")
-                    # s = jwtFromPi.split("+++++")
-                    jsonFromDevice = json.loads(jwtFromPi)
-                    # print(s[0])
-                    # print(jsonFromDevice)
+                    # wait for TVM send Device's data with Token
+                    responseFromTVM = sock.recv(2048).decode("utf-8")
+                    s = responseFromTVM.split("+++++")
+                    jsonFromDevice = json.loads(s[1])
+                    print(responseFromTVM)
+                    jwtFromTVM = s[0]
+                    print(jwtFromTVM)
+                    print(jsonFromDevice)
                     print("Humidity :", format(float(jsonFromDevice[0])/float(100),'.2f'))
                     print("Temperature (Celsius) :", format(float(jsonFromDevice[1])/float(100),'.2f'))
                     print("Temperature (Fahrenheit) :", format(float(jsonFromDevice[2])/float(100),'.2f'))
 
-                    break
-                    # print(jwtFromPi)
-                    # if jwtFromTBAS == jwtFromPi:
+                    # if jwtFromTTAS == jwtFromTVM:
                     #     audienceIP = addr_defines.CP_IP
-                    # elif pipe2.recv() == jwtFromPi:
-                    #     audienceIP = addr_defines.PI_IP
+                    # elif pipe2.recv() == jwtFromTVM:
+                    #     audienceIP = addr_defines.TVM_IP
                     # else:
                     #     sock.sendall("Your Token is illegal.".encode("utf-8"))
                     #     break
 
-                    # try:
-                    #     decodedData = jwt.decode(jwtFromPi, jwt.decode(jwtFromPi, verify=False)["public_key"].encode("utf-8")
-                    #         , issuer=addr_defines.TBAS_IP, audience=audienceIP, algorithm='RS256')
-                    #     print(decodedData)
-                    # except jwt.InvalidSignatureError:
-                    #     print("Signature verification failed.")
-                    #     sock.sendall("Signature verification failed.".encode("utf-8"))
-                    # except jwt.DecodeError:
-                    #     print("Decode Error.")
-                    #     sock.sendall("Decode Error.".encode("utf-8"))
-                    # except jwt.ExpiredSignatureError:
-                    #     print("Signature has expired.")
-                    #     sock.sendall("Signature has expired.".encode("utf-8"))
-                    # except jwt.InvalidAudienceError:
-                    #     print("Audience is error.")
-                    #     sock.sendall("Audience is error.".encode("utf-8"))
-                    # except jwt.InvalidIssuerError:
-                    #     print("Issue is error.")
-                    #     sock.sendall("Issue is error.".encode("utf-8"))
-                    # except jwt.InvalidIssuedAtError:
-                    #     print("The time of the Token was issued which is error.")
-                    #     sock.sendall("The time of the Token was issued which is error.".encode("utf-8"))
-                # Token from control program is illegal, resend verification information to TBAS
+                    try:
+                        decodedData = jwt.decode(jwtFromTVM, jwt.decode(jwtFromTVM, verify=False)["public_key"].encode("utf-8")
+                            , issuer=addr_defines.TTAS_IP, audience=addr_defines.TVM_IP, algorithm='RS256')
+                        print(decodedData)
+                    except jwt.InvalidSignatureError:
+                        print("Signature verification failed.")
+                        sock.sendall("Signature verification failed.".encode("utf-8"))
+                    except jwt.DecodeError:
+                        print("Decode Error.")
+                        sock.sendall("Decode Error.".encode("utf-8"))
+                    except jwt.ExpiredSignatureError:
+                        print("Signature has expired.")
+                        sock.sendall("Signature has expired.".encode("utf-8"))
+                    except jwt.InvalidAudienceError:
+                        print("Audience is error.")
+                        sock.sendall("Audience is error.".encode("utf-8"))
+                    except jwt.InvalidIssuerError:
+                        print("Issue is error.")
+                        sock.sendall("Issue is error.".encode("utf-8"))
+                    except jwt.InvalidIssuedAtError:
+                        print("The time of the Token was issued which is error.")
+                        sock.sendall("The time of the Token was issued which is error.".encode("utf-8"))
+
+                # Token from control program is illegal, resend verification information to TTAS
                 else:
                     print("Token from control program is illegal.")
-                    connectTBAS()
-                    sock.sendall(jwtFromTBAS)
-                    dataFromPi = sock.recv(1024).decode("utf-8")
+                    connectTTAS()
+                    sock.sendall(jwtFromTTAS)
+                    dataFromTVM = sock.recv(1024).decode("utf-8")
 
             sock.sendall("close".encode("utf-8"))
             pipe2.close()
@@ -182,24 +187,25 @@ def connectRaspberryPi(pipe2):
 
 def clientMain(pipe2):
     while True:
-        # connectTBAS()
+        # connectTTAS()
         try:
             try:
-                # global jwtFromTBAS
+                # global jwtFromTTAS
                 # verify jwt via signature and decode it via rsa's public key
-                decodedData = jwt.decode(jwtFromTBAS, jwt.decode(jwtFromTBAS, verify=False)["public_key"].encode("utf-8")
-                    , issuer=addr_defines.TBAS_IP, audience=addr_defines.CP_IP, algorithm='RS256')
+                decodedData = jwt.decode(jwtFromTTAS, jwt.decode(jwtFromTTAS, verify=False)["public_key"].encode("utf-8")
+                    , issuer=addr_defines.TTAS_IP, audience=addr_defines.CP_IP, algorithm='RS256')
+                connectTVM(pipe2)
             except jwt.InvalidSignatureError:
-                connectTBAS()
+                connectTTAS()
             except jwt.DecodeError:
-                connectTBAS()
+                connectTTAS()
             except jwt.ExpiredSignatureError:
-                connectTBAS()
+                connectTTAS()
             except jwt.InvalidIssuerError:
-                connectTBAS()
+                connectTTAS()
             except jwt.InvalidAudienceError:
-                connectTBAS()
-            connectRaspberryPi(pipe2)
+                connectTTAS()
+            
             time.sleep(6)
         except KeyboardInterrupt:
             break
