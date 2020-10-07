@@ -45,11 +45,9 @@ class ServerThread(Thread):
         
     def run(self):
         while True:
-            global jwtFromTTAS_TVM
             dataFromTTAS = self._conn.recv(2048)
             print ("From", self._addr, ": " + dataFromTTAS.decode("utf-8"))
             self._conn.sendall("Control program got TTAS's Token.".encode("utf-8"))
-            jwtFromTTAS_TVM = dataFromTTAS
             self._pipe1.send(dataFromTTAS)
             print(self._addr, "disconnect!")
             self._conn.close()
@@ -77,7 +75,7 @@ def serverMain(pipe1):
                     # multi-thread
                     newThread = ServerThread(conn, addr, pipe1)
                     newThread.start()
-                    newThread.join()
+                    # newThread.join()
                     
                 except KeyboardInterrupt:
                     break
@@ -90,8 +88,6 @@ def connectTTAS():
     context.options |= (ssl.OP_NO_TLSv1 | ssl.OP_NO_TLSv1_1 | ssl.OP_NO_TLSv1_2)
     with context.wrap_socket(socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0)) as sock:
         try:
-            # avoid continuous port occupation
-            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             sock.connect((addr_defines.TTAS_IP, addr_defines.TTAS_PORT))
 
             global dic
@@ -102,6 +98,7 @@ def connectTTAS():
             jwtFromTTAS_CP = dataFromTTAS
 
             sock.sendall("close".encode("utf-8"))
+            sock.close()
 
         except socket.error:
             print ("Connect error")
@@ -121,7 +118,6 @@ def clientMain(pipe2):
     context.options |= (ssl.OP_NO_TLSv1 | ssl.OP_NO_TLSv1_1 | ssl.OP_NO_TLSv1_2)
     with context.wrap_socket(socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0)) as sock:
         try:
-            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             sock.connect((addr_defines.TVM_IP, addr_defines.TVM_PORT))
             while True:
                 try:
@@ -146,8 +142,13 @@ def clientMain(pipe2):
                                 s = responseFromTVM.split("+++++")
                                 jwtFromTVM = s[0].encode("utf-8")
                                 dataFromDevice = json.loads(s[1])
+                                print(jwtFromTVM)
 
-                                if pipe2.recv() == jwtFromTVM:
+                                # check if there is still data in the pipe
+                                if pipe2.poll(0.1):
+                                    global jwtFromTTAS_TVM
+                                    jwtFromTTAS_TVM = pipe2.recv()
+                                if jwtFromTTAS_TVM == jwtFromTVM:
                                     try:
                                         decodedData = jwt.decode(jwtFromTVM, jwt.decode(jwtFromTVM, verify=False)["public_key"].encode("utf-8")
                                             , issuer=addr_defines.TTAS_IP, audience=addr_defines.TVM_IP, algorithm='RS256')
@@ -177,7 +178,7 @@ def clientMain(pipe2):
                                         sock.sendall("The time of the Token was issued which is error.".encode("utf-8"))
                                 else:
                                     sock.sendall("Token from TVM is illegal.".encode("utf-8"))
-                                
+                                    
                             # Token from control program is illegal, resend verification information to TTAS
                             else:
                                 print(feadbackFromTVM)
@@ -196,9 +197,10 @@ def clientMain(pipe2):
                     except jwt.InvalidAudienceError:
                         connectTTAS()
                     
-                    time.sleep(5)
+                    time.sleep(0.5)
                 except KeyboardInterrupt:
                     sock.sendall("close".encode("utf-8"))
+                    sock.close()
                     break
         except socket.error:
             print ("Connect error")
