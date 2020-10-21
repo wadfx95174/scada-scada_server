@@ -139,13 +139,14 @@ def clientMain(pipe2):
                                 
                                 # wait for TVM send Device's data with Token
                                 responseFromTVM = sock.recv(2048).decode("utf-8")
+                                print(responseFromTVM)
                                 s = responseFromTVM.split("+++++")
                                 jwtFromTVM = s[0].encode("utf-8")
                                 dataFromDevice = json.loads(s[1])
                                 print(jwtFromTVM)
 
                                 # check if there is still data in the pipe
-                                if pipe2.poll(0.1):
+                                if pipe2.poll(0.05):
                                     global jwtFromTTAS_TVM
                                     jwtFromTTAS_TVM = pipe2.recv()
                                 if jwtFromTTAS_TVM == jwtFromTVM:
@@ -197,7 +198,7 @@ def clientMain(pipe2):
                     except jwt.InvalidAudienceError:
                         connectTTAS()
                     
-                    time.sleep(0.5)
+                    time.sleep(0.4)
                 except KeyboardInterrupt:
                     sock.sendall("close".encode("utf-8"))
                     sock.close()
