@@ -46,10 +46,10 @@ class ServerThread(Thread):
     def run(self):
         while True:
             dataFromTTAS = self._conn.recv(2048)
-            print ("From", self._addr, ": " + dataFromTTAS.decode("utf-8"))
+            # print ("From", self._addr, ": " + dataFromTTAS.decode("utf-8"))
             self._conn.sendall("Control program got TTAS's Token.".encode("utf-8"))
             self._pipe1.send(dataFromTTAS)
-            print(self._addr, "disconnect!")
+            # print(self._addr, "disconnect!")
             self._conn.close()
             break
 
@@ -65,8 +65,8 @@ def serverMain(pipe1):
         sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         sock.bind((addr_defines.CP_IP, addr_defines.CP_PORT))
         sock.listen(5)
-        print ("Server start at: %s:%s" %(addr_defines.CP_IP, addr_defines.CP_PORT))
-        print ("Wait for connection...")
+        # print ("Server start at: %s:%s" %(addr_defines.CP_IP, addr_defines.CP_PORT))
+        # print ("Wait for connection...")
 
         with context.wrap_socket(sock, server_side=True) as ssock:
             while True:
@@ -103,14 +103,6 @@ def connectTTAS():
         except socket.error:
             print ("Connect error")
 
-# connect TVM and send data to Raspberry 
-# def connectTVM(pipe2, sock):
-    
-
-    # sock.sendall("close".encode("utf-8"))
-
-        
-
 def clientMain(pipe2):
     # connect TVM and send request to TVM 
     context = ssl.SSLContext(ssl.PROTOCOL_TLS)
@@ -119,7 +111,8 @@ def clientMain(pipe2):
     with context.wrap_socket(socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0)) as sock:
         try:
             sock.connect((addr_defines.TVM_IP, addr_defines.TVM_PORT))
-            while True:
+            for i in range(10):
+            # while True:
                 try:
                     try:
                         global jwtFromTTAS_CP
@@ -135,15 +128,13 @@ def clientMain(pipe2):
                         while True:
                             # Token from control program is legal
                             if feadbackFromTVM == "Legal":
-                                print("Token from control program is legal.")
+                                # print("Token from control program is legal.")
                                 
                                 # wait for TVM send Device's data with Token
                                 responseFromTVM = sock.recv(2048).decode("utf-8")
-                                print(responseFromTVM)
                                 s = responseFromTVM.split("+++++")
                                 jwtFromTVM = s[0].encode("utf-8")
                                 dataFromDevice = json.loads(s[1])
-                                print(jwtFromTVM)
 
                                 # check if there is still data in the pipe
                                 if pipe2.poll(0.05):
@@ -153,36 +144,35 @@ def clientMain(pipe2):
                                     try:
                                         decodedData = jwt.decode(jwtFromTVM, jwt.decode(jwtFromTVM, verify=False)["public_key"].encode("utf-8")
                                             , issuer=addr_defines.TTAS_IP, audience=addr_defines.TVM_IP, algorithm='RS256')
-                                        print(decodedData)
                                         print("Humidity :", format(float(dataFromDevice[0])/float(100),'.2f'))
                                         print("Temperature (Celsius) :", format(float(dataFromDevice[1])/float(100),'.2f'))
                                         print("Temperature (Fahrenheit) :", format(float(dataFromDevice[2])/float(100),'.2f'))
                                         sock.sendall("close".encode("utf-8"))
                                         break
                                     except jwt.InvalidSignatureError:
-                                        print("Signature verification failed.")
+                                        # print("Signature verification failed.")
                                         sock.sendall("Signature verification failed.".encode("utf-8"))
                                     except jwt.DecodeError:
-                                        print("Decode Error.")
+                                        # print("Decode Error.")
                                         sock.sendall("Decode Error.".encode("utf-8"))
                                     except jwt.ExpiredSignatureError:
-                                        print("Signature has expired.")
+                                        # print("Signature has expired.")
                                         sock.sendall("Signature has expired.".encode("utf-8"))
                                     except jwt.InvalidAudienceError:
-                                        print("Audience is error.")
+                                        # print("Audience is error.")
                                         sock.sendall("Audience is error.".encode("utf-8"))
                                     except jwt.InvalidIssuerError:
-                                        print("Issue is error.")
+                                        # print("Issue is error.")
                                         sock.sendall("Issue is error.".encode("utf-8"))
                                     except jwt.InvalidIssuedAtError:
-                                        print("The time of the Token was issued which is error.")
+                                        # print("The time of the Token was issued which is error.")
                                         sock.sendall("The time of the Token was issued which is error.".encode("utf-8"))
                                 else:
                                     sock.sendall("Token from TVM is illegal.".encode("utf-8"))
                                     
                             # Token from control program is illegal, resend verification information to TTAS
                             else:
-                                print(feadbackFromTVM)
+                                # print(feadbackFromTVM)
                                 connectTTAS()
                                 sock.sendall((jwtFromTTAS_CP.decode("utf-8") + "+++++" + json.dumps(sensorDic)).encode("utf-8"))
                                 feadbackFromTVM = sock.recv(1024).decode("utf-8")
@@ -198,11 +188,13 @@ def clientMain(pipe2):
                     except jwt.InvalidAudienceError:
                         connectTTAS()
                     
-                    time.sleep(0.4)
+                    time.sleep(0.1)
                 except KeyboardInterrupt:
                     sock.sendall("close".encode("utf-8"))
                     sock.close()
                     break
+            sock.sendall("close".encode("utf-8"))
+            sock.close()
         except socket.error:
             print ("Connect error")
     
@@ -212,11 +204,13 @@ def main():
     server = Process(target=serverMain, args=(pipe1, ))
 
     server.start()
+    startTime = time.time()
     clientMain(pipe2)
 
     pipe1.close()
     pipe2.close()
-
+    endTime = time.time()
+    print(endTime - startTime)
     server.join()
 
 if __name__ == '__main__':
