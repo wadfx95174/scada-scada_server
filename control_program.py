@@ -133,14 +133,13 @@ def clientMain(pipe2):
                                 TVM without Token
                                 '''
                                 responseFromTVM = sock.recv(2048).decode("utf-8")
-                                print("wer", responseFromTVM)
                                 dataFromDevice = json.loads(responseFromTVM)
                                 print("Humidity :", format(float(dataFromDevice[0])/float(100),'.2f'))
                                 print("Temperature (Celsius) :", format(float(dataFromDevice[1])/float(100),'.2f'))
                                 print("Temperature (Fahrenheit) :", format(float(dataFromDevice[2])/float(100),'.2f'))
                                 sock.sendall("close".encode("utf-8"))
                                 break
-                            
+
                                 '''
                                 TVM with Token
                                 '''
@@ -212,20 +211,60 @@ def clientMain(pipe2):
         except socket.error:
             print ("Connect error")
     
-
+def onlySSLSocket():
+    # connect TVM and send request to TVM 
+    context = ssl.SSLContext(ssl.PROTOCOL_TLS)
+    context.load_verify_locations("./key/certificate.pem")
+    context.options |= (ssl.OP_NO_TLSv1 | ssl.OP_NO_TLSv1_1 | ssl.OP_NO_TLSv1_2)
+    with context.wrap_socket(socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0)) as sock:
+        try:
+            sock.connect((addr_defines.TVM_IP, addr_defines.TVM_PORT))
+            for i in range(10):
+                try:
+                    global sensorDic
+                    sock.sendall(json.dumps(sensorDic).encode("utf-8"))
+                    responseFromTVM = sock.recv(2048).decode("utf-8")
+                    dataFromDevice = json.loads(responseFromTVM)
+                    print("Humidity :", format(float(dataFromDevice[0])/float(100),'.2f'))
+                    print("Temperature (Celsius) :", format(float(dataFromDevice[1])/float(100),'.2f'))
+                    print("Temperature (Fahrenheit) :", format(float(dataFromDevice[2])/float(100),'.2f'))
+                    sock.sendall("close".encode("utf-8"))
+                
+                    time.sleep(0.1)
+                except KeyboardInterrupt:
+                    sock.sendall("close".encode("utf-8"))
+                    sock.close()
+                    break
+            sock.sendall("close".encode("utf-8"))
+            sock.close()
+        except socket.error:
+            print ("Connect error")
 def main():
-    (pipe1, pipe2) = Pipe()
-    server = Process(target=serverMain, args=(pipe1, ))
-
-    server.start()
+    '''
+    Only SSL socket
+    '''
     startTime = time.time()
-    clientMain(pipe2)
-
-    pipe1.close()
-    pipe2.close()
+    onlySSLSocket()
     endTime = time.time()
     print(endTime - startTime)
-    server.join()
+    '''
+    other
+    '''
+    # (pipe1, pipe2) = Pipe()
+    # server = Process(target=serverMain, args=(pipe1, ))
+
+    # server.start()
+    # startTime = time.time()
+    # clientMain(pipe2)
+
+    # pipe1.close()
+    # pipe2.close()
+    # endTime = time.time()
+    # print(endTime - startTime)
+    # server.join()
+
+    
+
 
 if __name__ == '__main__':
     main()
