@@ -27,10 +27,13 @@ class NFQueue:
         self._pipe = pipe
         self._sensorDict = {}
         self._sock = sock
-        print(self._sock)
+        self._context = ssl.SSLContext(ssl.PROTOCOL_TLS)
+        self._context.load_verify_locations("./key/certificate.pem")
+        self._context.options |= (ssl.OP_NO_TLSv1 | ssl.OP_NO_TLSv1_1 | ssl.OP_NO_TLSv1_2)
 
     def start(self):
         print("start")
+        print(self._sock)
         queue = netfilterqueue.NetfilterQueue()
         queue.bind(0, self.processPacket)
         try:
@@ -61,7 +64,7 @@ class NFQueue:
             # discard the origin packet
             packet.drop()
             # send request to TVM
-            clientMain(self._pipe, self._sensorDict)
+            clientMain(self._pipe, self._sensorDict, self._context)
         else:
             packet.accept()
 
@@ -135,7 +138,7 @@ def connectTTAS():
         except socket.error:
             print ("Connect error")
 
-def clientMain(pipe, sensorDic):
+def clientMain(pipe, sensorDic, context):
     # connect TVM and send request to TVM 
     with context.wrap_socket(socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0)) as sock:
         try:
@@ -248,7 +251,7 @@ def onlySSLSocket():
             sock.connect((addr_defines.TVM_IP, addr_defines.TVM_PORT))
             for i in range(10):
                 try:
-                    global sensorDic
+                    sensorDic = {}
                     sock.sendall(json.dumps(sensorDic).encode("utf-8"))
                     responseFromTVM = sock.recv(2048).decode("utf-8")
                     dataFromDevice = json.loads(responseFromTVM)
@@ -291,6 +294,7 @@ def main():
             try:
                 print(sock)
                 nfqueue = NFQueue(clientMainPipe, sock)
+                nfqueue.start()
             except KeyboardInterrupt:
                 print("end")
         except socket.error:
