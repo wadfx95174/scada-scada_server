@@ -18,10 +18,15 @@ class Modbus(Packet):
         ShortField("register", int('0000', 16)),
         ShortField("Word Count", int('0003', 16))
     ]
+    # fields_desc = [
+    #     XByteField("Function Code", 0x04),
+    #     BitFieldLenField("byteCount", None, 8, count_of="registerVal", adjust=lambda x: x*2),
+    #     FieldListField("registerVal", [0x0000], ShortField('', 0x0000), count_from=lambda pkt: pkt.byteCount)
+    # ]
 
 # set Ethernet fields
 # src_mac = "00:25:90:bb:b3:e6"
-# dst_mac = "00:90:53:1c:49:8d"
+# dst_mac = "00:90:e8:79:3e:9d"
 src_mac = "00:0d:e0:81:3c:a5"
 dst_mac = "f4:28:53:1c:49:8d"
 
