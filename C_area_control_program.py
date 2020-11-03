@@ -20,25 +20,14 @@ dic = {
   'ip': addr_defines.TVM_IP,
   'port': addr_defines.TVM_PORT
 }
-# sensor information
-# sensorDic = {}
-# sensorDic = {
-#   'converter_ip': addr_defines.CONVERTER_IP,
-#   'converter_port': addr_defines.CONVERTER_PORT,
-#   'slave_id': 1,
-#   'function_code': cst.READ_INPUT_REGISTERS,
-#   'starting_address': 0,
-#   'quantity_of_x': 3
-# }
 
 # netfilterqueue class
 class NFQueue:
-    def __init__(self, pipe):
+    def __init__(self, pipe, sock):
         self._pipe = pipe
-        self._context = ssl.SSLContext(ssl.PROTOCOL_TLS)
-        self._context.load_verify_locations("./key/certificate.pem")
-        self._context.options |= (ssl.OP_NO_TLSv1 | ssl.OP_NO_TLSv1_1 | ssl.OP_NO_TLSv1_2)
         self._sensorDict = {}
+        self._sock = sock
+        print(self._sock)
 
     def start(self):
         print("start")
@@ -57,8 +46,8 @@ class NFQueue:
             load = pkt[Raw].load
             print(pkt.show())
             self._sensorDict = {
-                'CPAddr': pkt[IP].src,
-                'CPPort': pkt[TCP].sport,
+                'CP_address': pkt[IP].src,
+                'CP_port': pkt[TCP].sport,
                 'converter_ip': pkt[IP].dst,
                 'converter_port': pkt[TCP].dport,
                 'transaction_id': int.from_bytes(load[0:2], byteorder='big'),
@@ -69,9 +58,10 @@ class NFQueue:
             }
 
             print(self._sensorDict)
-            
+            # discard the origin packet
+            packet.drop()
             # send request to TVM
-            clientMain(self._pipe, self._context, self._sensorDict)
+            clientMain(self._pipe, self._sensorDict)
         else:
             packet.accept()
 
@@ -145,7 +135,7 @@ def connectTTAS():
         except socket.error:
             print ("Connect error")
 
-def clientMain(pipe, context, sensorDic):
+def clientMain(pipe, sensorDic):
     # connect TVM and send request to TVM 
     with context.wrap_socket(socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0)) as sock:
         try:
@@ -292,16 +282,25 @@ def main():
     server = Process(target=serverMain, args=(serverPipe, ))
     server.start()
 
-    startTime = time.time()
+    context = ssl.SSLContext(ssl.PROTOCOL_TLS)
+    context.load_verify_locations("./key/certificate.pem")
+    context.options |= (ssl.OP_NO_TLSv1 | ssl.OP_NO_TLSv1_1 | ssl.OP_NO_TLSv1_2)
+    with context.wrap_socket(socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0)) as sock:
+        try:
+            sock.connect((addr_defines.TVM_IP, addr_defines.TVM_PORT))
+            try:
+                print(sock)
+                nfqueue = NFQueue(clientMainPipe, sock)
+            except KeyboardInterrupt:
+                print("end")
+        except socket.error:
+            print ("Connect error")
 
-    nfqueue = NFQueue(clientMainPipe)
-    nfqueue.start()
+    # nfqueue = NFQueue(clientMainPipe)
+    # nfqueue.start()
 
     serverPipe.close()
     clientMainPipe.close()
-
-    endTime = time.time()
-    print(endTime - startTime)
 
     server.join()
 
