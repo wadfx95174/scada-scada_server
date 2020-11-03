@@ -2,12 +2,51 @@ from modbus_tk import modbus_tcp
 import modbus_tk
 import netfilterqueue
 from scapy.all import *
-import struct
+
+class NFQueue:
+    def __init__(self, test):
+        self._test = test
+    
+    def start(self):
+        print("start")
+        queue = netfilterqueue.NetfilterQueue()
+        queue.bind(0, self.processPacket)
+        try:
+            queue.run()
+        except KeyboardInterrupt:
+            print("end")
+        queue.unbind()
+    
+    def processPacket(self, packet):
+        pkt = IP(packet.get_payload())
+        if pkt.haslayer(Raw) and int.from_bytes(pkt[Raw].load[6:7], byteorder='big') == 1:
+            print(pkt.show())
+            CPAddr = pkt[IP].src
+            CPPort = pkt[TCP].sport
+            sensorAddr = pkt[IP].dst
+            sensorPort = pkt[TCP].dport
+            load = pkt[Raw].load
+            transID = int.from_bytes(load[0:2], byteorder='big')
+            slaveID = int.from_bytes(load[6:7], byteorder='big')
+            funcCode = int.from_bytes(load[7:8], byteorder='big')
+            startAddr = int.from_bytes(load[8:10], byteorder='big')
+            wordCount = int.from_bytes(load[10:12], byteorder='big')
+            print("CPAddr: ", CPAddr)
+            print("CPPort: ", CPPort)
+            print("sensorAddr: ", sensorAddr)
+            print("sensorPort: ", sensorPort)
+            print("transID: ", transID)
+            print("slaveID: ", slaveID)
+            print("funcCode: ", funcCode)
+            print("startAddr: ", startAddr)
+            print("wordCount: ", wordCount)
+        pakcet.accept()
+
 
 def main():
     print('start')
     queue = netfilterqueue.NetfilterQueue()
-    queue = bind(0, processPacket)
+    queue.bind(0, processPacket)
     try:
         queue.run()
     except KeyboardInterrupt:
@@ -18,37 +57,30 @@ def processPacket(packet):
     pkt = IP(packet.get_payload())
     # print(pkt.show())
     if pkt.haslayer(Raw):
-        sensorAddr = pkt.getlayer(IP).dst
-        sensorPort = pkt.getlayer(IP).dport
-        print(sensorAddr)
-        print(sensorPort)
-        load = pkt(Raw).load
-        print("load", load)
+        print(pkt.show())
+        CPAddr = pkt[IP].src
+        CPPort = pkt[TCP].sport
+        sensorAddr = pkt[IP].dst
+        sensorPort = pkt[TCP].dport
+        load = pkt[Raw].load
         transID = int.from_bytes(load[0:2], byteorder='big')
         slaveID = int.from_bytes(load[6:7], byteorder='big')
         funcCode = int.from_bytes(load[7:8], byteorder='big')
         startAddr = int.from_bytes(load[8:10], byteorder='big')
         wordCount = int.from_bytes(load[10:12], byteorder='big')
-        print("transID", transID)
-        print("slaveID", slaveID)
-        print("funcCode", funcCode)
-        print("startAddr", startAddr)
-        print("wordCount", wordCount)
-
-        master = modbus_tcp.TcpMaster(sensorAddr, sensorPort)
-        try:
-            data = master.execute(slave=slaveID, function_code=funcCode, starting_address=startAddr, quantity_of_x=wordCount)
-            print("Humidity :", format(float(data[0])/float(100),'.2f'))
-            print("Temperature (Celsius) :", format(float(data[1])/float(100),'.2f'))
-            print("Temperature (Fahrenheit) :", format(float(data[2])/float(100),'.2f'))
-        except modbus_tk.modbus.ModbusError as exc:
-            print("%s- Code=%d", exc, exc.get_exception_code())
-        except modbus_tcp.ModbusInvalidMbapError as exc:
-            print(exc)
-
-        packet.setpayload(bytes(pkt))
+        print("CPAddr: ", CPAddr)
+        print("CPPort: ", CPPort)
+        print("sensorAddr: ", sensorAddr)
+        print("sensorPort: ", sensorPort)
+        print("transID: ", transID)
+        print("slaveID: ", slaveID)
+        print("funcCode: ", funcCode)
+        print("startAddr: ", startAddr)
+        print("wordCount: ", wordCount)
 
     packet.accept()
 
 if __name__ == '__main__':
-    main()
+    # main()
+    t = NFQueue("test word")
+    t.start()
