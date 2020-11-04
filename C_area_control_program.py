@@ -7,6 +7,7 @@ import time
 import addr_defines
 import netfilterqueue
 from scapy.all import *
+import generate_modbus_packet
 
 # JWT from TTAS(CP)
 jwtFromTTAS_CP = b''
@@ -180,9 +181,24 @@ def clientMain(sock, pipe, sensorDic, context):
                         decodedData = jwt.decode(jwtFromTVM, jwt.decode(jwtFromTVM, verify=False)["public_key"].encode("utf-8")
                             , issuer=addr_defines.TTAS_IP, audience=addr_defines.TVM_IP, algorithm='RS256')
                         
-                        print("Humidity :", format(float(dataFromDevice[0])/float(100),'.2f'))
-                        print("Temperature (Celsius) :", format(float(dataFromDevice[1])/float(100),'.2f'))
-                        print("Temperature (Fahrenheit) :", format(float(dataFromDevice[2])/float(100),'.2f'))
+                        modbus_TCP = generate_modbus_packet.Modbus_TCP()
+                        modbus = generate_modbus_packet.Modbus()
+                        modbus_TCP.TransactionIdentifier = sensorDic["transaction_id"]
+                        modbus.RegisterValue.append(dataFromDevice[0])
+                        modbus.RegisterValue.append(dataFromDevice[1])
+                        modbus.RegisterValue.append(dataFromDevice[2])
+                        modbus.ByteCount = len(modbus.RegisterValue) * 2
+                        modbus_TCP.Length = modbus.ByteCount + 3
+                        generate_modbus_packet.IPDict['length'] = modbus_TCP.Length + 46
+
+                        pkt = generate_modbus_packet.generatePacket(modbus_TCP, modbus)
+
+                        print(pkt.display())
+                        sendp(pkt)
+
+                        # print("Humidity :", format(float(dataFromDevice[0])/float(100),'.2f'))
+                        # print("Temperature (Celsius) :", format(float(dataFromDevice[1])/float(100),'.2f'))
+                        # print("Temperature (Fahrenheit) :", format(float(dataFromDevice[2])/float(100),'.2f'))
                         sock.sendall("close".encode("utf-8"))
                         break
                     except jwt.InvalidSignatureError:
