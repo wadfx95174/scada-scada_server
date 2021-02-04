@@ -50,19 +50,19 @@ class NFQueue:
 
     def processPacket(self, packet):
         pkt = IP(packet.get_payload())
-        # print (pkt.show())
-        # if pkt.haslayer(Raw):
-        if pkt.haslayer(Raw) and int.from_bytes(pkt[Raw].load[6:7], byteorder='big') == 9:
+        print (pkt.show())
+#        if pkt.haslayer(Raw):
+        if pkt.haslayer(Raw) and int.from_bytes(pkt[Raw].load[6:7], byteorder='big') == 21:
             load = pkt[Raw].load
 #            print (pkt.show())
 #            print (load)
             global previousSlaveID
-#            flag = True
-#            if previousSlaveID == int.from_bytes(pkt[Raw].load[6:7], byteorder='big'):
-#                flag = True
-#            else:
-#                flag = False
-#                previousSlaveID = int.from_bytes(pkt[Raw].load[6:7],byteorder='big')
+            flag = True
+            if previousSlaveID == int.from_bytes(pkt[Raw].load[6:7], byteorder='big'):
+                flag = True
+            else:
+                flag = False
+                previousSlaveID = int.from_bytes(pkt[Raw].load[6:7],byteorder='big')
             self._sensorDict = {
                 'CP_address': pkt[IP].src,
                 'CP_port': pkt[TCP].sport,
@@ -75,15 +75,17 @@ class NFQueue:
                 'function_code': int.from_bytes(load[7:8], byteorder='big'),
                 'starting_address': int.from_bytes(load[8:10], byteorder='big'),
                 'quantity_of_x': int.from_bytes(load[10:12], byteorder='big'),
-#                'flag': flag
+                'flag': flag
             }
+#            print (self._sensorDict["slave_id"])
             # discard the origin packet
             packet.drop()
-            # packet.accept()
+#            packet.accept()
             # send request to TVM
             clientMain(self._sock, self._pipe, self._sensorDict, self._context)
         else:
             packet.accept()
+#        packet.accept()
 
 
 # server thread class
@@ -147,9 +149,8 @@ def connectTTAS():
 
             dataFromTTAS = sock.recv(2048)
             global jwtFromTTAS_CP
-            
             jwtFromTTAS_CP = dataFromTTAS
-            # print (jwtFromTTAS_CP)
+
             sock.sendall("close".encode("utf-8"))
             sock.close()
 
@@ -159,7 +160,6 @@ def connectTTAS():
 def clientMain(sock, pipe, sensorDict, context):
     try:
         global jwtFromTTAS_CP
-        # print (jwtFromTTAS_CP)
         # verify jwt via signature and decode it via rsa's public key
         decodedData = jwt.decode(jwtFromTTAS_CP, jwt.decode(jwtFromTTAS_CP, verify=False)["public_key"].encode("utf-8")
             , issuer=addr_defines.TTAS_IP, audience=addr_defines.CP_IP, algorithm='RS256')
@@ -178,6 +178,7 @@ def clientMain(sock, pipe, sensorDict, context):
 
         # wait for feadback of TVM
         feadbackFromTVM = sock.recv(1024).decode("utf-8")
+        
         while True:
             # Token from control program is legal
             if feadbackFromTVM == "Legal":
@@ -201,6 +202,8 @@ def clientMain(sock, pipe, sensorDict, context):
                 s = responseFromTVM.split("+++++")
                 jwtFromTVM = s[0].encode("utf-8")
                 dataFromDevice = json.loads(s[1])
+
+
                 # check if there is still data in the pipe
                 if pipe.poll(0.05):
                     global jwtFromTTAS_TVM
