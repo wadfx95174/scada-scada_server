@@ -1,7 +1,8 @@
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.hazmat.backends import default_backend
-
+import jwt
+import time
 # generate private/public key pair
 key = ec.generate_private_key(
     ec.SECP384R1(), default_backend()
@@ -24,3 +25,10 @@ print('Private key = ')
 print(private_key_str)
 print('Public key = ')
 print(public_key_str)
+
+
+a = jwt.encode({"iss": "172.16.100.234", "iat": int(time.time()), "exp": int(time.time()) + 100, "aud": "172.16.100.233", "public_key": public_key_str}, private_key_str, algorithm="ES256")
+b = jwt.decode(a, public_key_str, issuer="172.16.100.234"
+    , audience="172.16.100.233", algorithm='ES256')
+print(a)
+print(b)
