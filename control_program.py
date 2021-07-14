@@ -81,7 +81,6 @@ class ServerThread(Thread):
             try:
                 messageFromTTASorBEMS = self._conn.recv(2048)
             except:
-                print ("The connection has something wrong.")
                 logging.info("The connection has something wrong.")
                 break
 
@@ -111,7 +110,6 @@ class ServerThread(Thread):
                             , issuer=defines.TTAS_IP, audience=self._addr[0], algorithm='ES256')
                         baseTime = decodedData_BEMS['exp'] - decodedData_BEMS['iat']
                         if int(splitMessageFromBEMS[2]) / baseTime > 2:
-                            print ("The request from SCADA Server it too often.")
                             logging.critical("The usage frequency of the Token from SCADA Server is too high, maybe it is a DoS attack.")
                             self._conn.sendall("too often".encode("utf-8"))
                             if sleepTime == 1:
@@ -121,7 +119,6 @@ class ServerThread(Thread):
                             time.sleep(sleepTime)
                             sleepTime *= 4
                         else:
-                            print (command)
                             self._conn.sendall("Legal".encode("utf-8"))
                             sleepTime = 1
                             global jwtFromTTAS_SS_BEMS, sequence_num_BEMS
@@ -187,9 +184,6 @@ class ServerThread(Thread):
                         logging.info("Token's issue time from BEMS is invalid.")
                         self._conn.sendall("The time of the Token was issued which is error.".encode("utf-8"))
 
-#            self._conn.close()
-#            break
-
 def serverMain(pipe):
     context = ssl.SSLContext(ssl.PROTOCOL_TLS)
     # load private key and certificate file
@@ -211,7 +205,6 @@ def serverMain(pipe):
                     newThread = ServerThread(conn, addr, pipe)
                     newThread.start()
                 except Exception as e:
-                    # print ("Someone try to connect SCADA Server error")
                     logging.warning("Someone try to connect SCADA Server, but has something wrong.")
                 except KeyboardInterrupt:
                     break
@@ -255,13 +248,11 @@ def clientMain(pipe):
         try:
             sock.connect((defines.TVM_IP, defines.TVM_PORT))
             breakMark = False
-#            for i in range(10):
             while True:
                 try:
                     try:
                         global jwtFromTTAS_SS, sensorDic, sequence_num
                         # verify jwt via signature and decode it via ECDSA's public key
-
                         decodedData_SS = jwt.decode(jwtFromTTAS_SS, jwt.decode(jwtFromTTAS_SS, verify=False)["public_key"]
                             , issuer=defines.TTAS_IP, audience=defines.SS_IP, algorithm='ES256')
 
@@ -310,7 +301,6 @@ def clientMain(pipe):
 
                                         # the usage frequency of the Token from TVM is too high
                                         if int(splitResponseFromTVM[2]) / baseTime > 500:
-                                            print ("The response from TVM is too often.")
                                             logging.critical("The usage frequency of the Token from TVM is too high, maybe it is a DoS attack.")
                                             sock.sendall("too often".encode("utf-8"))
                                             if sleepTime == 1:
@@ -326,7 +316,6 @@ def clientMain(pipe):
                                                 or dataFromDevice[1] > 4000 or dataFromDevice[1] < 1000 \
                                                 or dataFromDevice[2] > 10400 or dataFromDevice[2] < 5000 \
                                                 or dataFromDevice == "error":
-                                                print ("The information from " + decodedData['hostname'] + " (IP : " + decodedData['aud'] + ") is abnormal.")
                                                 logging.warning("The information from " + decodedData['hostname'] + " (IP : " + decodedData['aud'] + ") is abnormal.")
                                             else:
                                                 print ("Humidity :", format(float(dataFromDevice[0])/float(100),'.2f'))
@@ -335,27 +324,21 @@ def clientMain(pipe):
                                                 sock.sendall("close".encode("utf-8"))
                                                 break
                                     except jwt.InvalidSignatureError:
-                                        # print ("Signature verification failed.")
                                         logging.info("Token's signature from TVM is invalid.")
                                         sock.sendall("Signature verification failed.".encode("utf-8"))
                                     except jwt.DecodeError:
-                                        # print ("Decode Error.")
                                         logging.info("Token from TVM can not be decoded.")
                                         sock.sendall("Decode Error.".encode("utf-8"))
                                     except jwt.ExpiredSignatureError:
-                                        # print ("Signature has expired.")
                                         logging.info("Token from TVM has expired.")
                                         sock.sendall("Signature has expired.".encode("utf-8"))
                                     except jwt.InvalidAudienceError:
-                                        # print ("Audience is error.")
                                         logging.info("Token's audience from TVM is invalid.")
                                         sock.sendall("Audience is error.".encode("utf-8"))
                                     except jwt.InvalidIssuerError:
-                                        # print ("Issue is error.")
                                         logging.info("Token's issuer from TVM is invalid.")
                                         sock.sendall("Issue is error.".encode("utf-8"))
                                     except jwt.InvalidIssuedAtError:
-                                        # print ("The time of the Token was issued which is error.")
                                         logging.info("Token's issue time form TVM is invalid.")
                                         sock.sendall("The time of the Token was issued which is error.".encode("utf-8"))
                                 else:
@@ -375,7 +358,6 @@ def clientMain(pipe):
                                     sequence_num = str(int(sequence_num) + 1)
                                     feadbackFromTVM = sock.recv(1024).decode("utf-8")
                                 except socket.error:
-                                    print ("send request error.")
                                     logging.warning("Send request to TVM error, mayby it is a DoS attack.")
 
                     except jwt.InvalidSignatureError:
@@ -402,8 +384,6 @@ def clientMain(pipe):
 
                 if breakMark:
                     break
-#            sock.sendall("close".encode("utf-8"))
-#            sock.close()
         except socket.error:
             logging.info("Connect TVM error.")
 
@@ -439,26 +419,17 @@ def main():
     '''
     Only SSL socket
     '''
-    # startTime = time.time()
     # onlySSLSocket()
-    # endTime = time.time()
-    # print(endTime - startTime)
-    connectTTAS("TVM")
-    #connectTTAS("BEMS")
     '''
     other
     '''
+    connectTTAS("TVM")
     (clientMainPipe, serverPipe) = Pipe()
     server = Process(target=serverMain, args=(serverPipe, ))
 
     server.start()
 
-#    for i in range(10):
-#    startTime = time.time()
-
     clientMain(clientMainPipe)
-#    endTime = time.time()
-#    print (endTime - startTime)
 
     clientMainPipe.close()
     serverPipe.close()
